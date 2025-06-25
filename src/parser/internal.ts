@@ -173,12 +173,10 @@ function parseList(
         // 'text' 토큰은 사실상 'paragraph'와 같습니다.
         // 인라인 요소(bold, link 등)를 포함하고 있으므로 parseMrkdwn으로 처리합니다.
         case 'paragraph': {
-          blockContent = token.tokens
-            .filter(
-              (child): child is Exclude<PhrasingToken, marked.Tokens.Image> =>
-                child.type !== 'image',
-            )
-            .map(parseMrkdwn)
+          const paragraphBlocks = parseParagraph(token);
+          // 반환된 블록들에서 텍스트 콘텐츠만 추출하여 합칩니다.
+          const blockContent = paragraphBlocks
+            .map(b => (b as SectionBlock).text?.text || '')
             .join('');
 
           if (blockContent) itemBlocks.push(blockContent);
