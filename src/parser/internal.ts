@@ -209,6 +209,7 @@ function parseList(
             .map(b => (b as SectionBlock).text?.text || '')
             .join('');
           
+          
           if (blockContent) itemBlocks.push(blockContent);
           break;
         }
