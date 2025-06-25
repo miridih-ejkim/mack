@@ -165,7 +165,7 @@ function parseList(
 
   const contents = element.items.map((item: marked.Tokens.ListItem) => {
     // 각 리스트 아이템의 모든 토큰을 순회하며 텍스트 콘텐츠를 조합합니다.
-    let itemContent = '';
+    const itemBlocks: string[] = [];
 
     for (const token of item.tokens) {
       let blockContent = '';
@@ -180,11 +180,13 @@ function parseList(
             )
             .map(parseMrkdwn)
             .join('');
+
+          if (blockContent) itemBlocks.push(blockContent);
           break;
         }
 
         case 'text': {
-          blockContent = token.raw;
+          if(token.text) itemBlocks.push(token.text);
           break;
         }
         
@@ -192,14 +194,14 @@ function parseList(
         case 'list': {
           const nestedListBlock = parseList(token, options, depth + 1);
           // 재귀 호출 결과(SectionBlock)에서 텍스트만 추출하여 추가합니다.
-          blockContent = nestedListBlock.text?.text || '';
+          if (nestedListBlock.text?.text) itemBlocks.push(nestedListBlock.text.text);
           break;
         }
         
         // 기존 코드 블록 파서를 호출하고 결과 텍스트를 가져옵니다.
         case 'code': {
           const codeBlock = parseCode(token);
-          blockContent = codeBlock.text?.text || '';
+          if (codeBlock.text?.text) itemBlocks.push(codeBlock.text.text);
           break;
         }
 
@@ -209,37 +211,30 @@ function parseList(
           blockContent = bqBlocks
             .map(b => (b as SectionBlock).text?.text || '')
             .join('\n');
+          if (blockContent) itemBlocks.push(blockContent);
           break;
         }
 
         // 리스트 아이템 사이의 공백은 줄바꿈으로 처리합니다.
         case 'space': {
-          blockContent = '\n';
           break;
         }
       }
-      
-      // 파싱된 블록 콘텐츠를 현재 아이템의 전체 내용에 추가합니다.
-      // 맨 앞에 불필요한 줄바꿈이 생기지 않도록 처리합니다.
-      if (itemContent && blockContent) {
-        itemContent += `\n${blockContent}`;
-      } else {
-        itemContent += blockContent;
-      }
     }
-
+    
     // 최종적으로 조합된 콘텐츠에 리스트 서식(bullet, number)을 적용합니다.
     const indent = '  '.repeat(depth);
     const prefix = indent + (element.ordered
       ? `${++listIndex}. `
-      : (item.checked !== null && item.checked !== undefined
-        ? `${options.checkboxPrefix?.(item.checked) ?? '• '}`
-        : '• '));
+      : '• ');
 
-    // 내용의 각 줄에 들여쓰기가 적용되도록 합니다. (중첩 리스트의 경우 중요)
-    const formattedContent = itemContent.split('\n').join(`\n${prefix.replace(/./g, ' ')}`);
+    const itemContent = itemBlocks.join('\n');
 
-    return `${prefix}${formattedContent}`;
+    // 내용의 각 줄에 들여쓰기가 적용되도록 함
+    const multiLinePrefix = prefix.replace(/./g, ' ');
+    const indentedContent = itemContent.split('\n').join(`\n${multiLinePrefix}`);
+
+    return `${prefix}${indentedContent}`;        
   });
 
   return section(contents.join('\n'));
