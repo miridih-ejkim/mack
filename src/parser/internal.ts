@@ -149,29 +149,26 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
 
     // H2 (##) -> Divider + 굵은 텍스트 SectionBlock 사용
     case 2: {
-      // SectionBlock은 mrkdwn을 지원하므로, parseMrkdwn을 사용해 ** 등 서식을 보존합니다.
-      const h2Text = element.tokens
-        .filter((child): child is Exclude<PhrasingToken, marked.Tokens.Image> => child.type !== 'image')
-        .map(parseMrkdwn)
-        .join('');
-      // 주요 섹션을 시각적으로 나누기 위해 Divider를 추가합니다.
-      return [divider(), section(`*${h2Text}*`)];
+      const paragraphToken: marked.Tokens.Paragraph = { type: 'paragraph', raw: element.raw, text: element.text, tokens: element.tokens };
+      const paragraphBlocks = parseParagraph(paragraphToken);
+      const h2Text = paragraphBlocks.map(b => (b as SectionBlock).text?.text || '').join('\n');
+      
+      return [divider(), section(h2Text)];
     }
     
     // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
     case 3: {
-      const h3Text = element.tokens
-        .filter((child): child is Exclude<PhrasingToken, marked.Tokens.Image> => child.type !== 'image')
-        .map(parseMrkdwn)
-        .join('');
+      const paragraphToken: marked.Tokens.Paragraph = { type: 'paragraph', raw: element.raw, text: element.text, tokens: element.tokens };
+      const paragraphBlocks = parseParagraph(paragraphToken);
+      const h3Text = paragraphBlocks.map(b => (b as SectionBlock).text?.text || '').join('\n');
+
       return [section(`› ${h3Text}`)];
     }
 
     // H4 (####) 이하 -> 단순 들여쓰기 텍스트로 처리
     default: {
       const otherHeadingText = element.tokens
-        .filter((child): child is Exclude<PhrasingToken, marked.Tokens.Image> => child.type !== 'image')
-        .map(parseMrkdwn)
+        .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
       return [section(`› ${otherHeadingText}`)];
     }
@@ -208,11 +205,10 @@ function parseList(
         // 인라인 요소(bold, link 등)를 포함하고 있으므로 parseMrkdwn으로 처리합니다.
         case 'paragraph': {
           const paragraphBlocks = parseParagraph(token);
-          // 반환된 블록들에서 텍스트 콘텐츠만 추출하여 합칩니다.
           const blockContent = paragraphBlocks
             .map(b => (b as SectionBlock).text?.text || '')
             .join('');
-
+          
           if (blockContent) itemBlocks.push(blockContent);
           break;
         }
@@ -256,10 +252,7 @@ function parseList(
     
     // 최종적으로 조합된 콘텐츠에 리스트 서식(bullet, number)을 적용합니다.
     const indent = '  '.repeat(depth);
-    const prefix = indent + (element.ordered
-      ? `${++listIndex}. `
-      : '• ');
-
+    const prefix = indent + (element.ordered ? `${++listIndex}. `: '• ');
     const itemContent = itemBlocks.join('\n');
 
     // 내용의 각 줄에 들여쓰기가 적용되도록 함
@@ -354,7 +347,7 @@ function parseToken(
 ): KnownBlock[] {
   switch (token.type) {
     case 'heading':
-      return  parseHeading(token);
+      return parseHeading(token);
 
     case 'paragraph':
       return parseParagraph(token);
