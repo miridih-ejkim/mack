@@ -136,12 +136,46 @@ function parseParagraph(element: marked.Tokens.Paragraph): KnownBlock[] {
   }, [] as (SectionBlock | ImageBlock)[]);
 }
 
-function parseHeading(element: marked.Tokens.Heading): HeaderBlock {
-  return header(
-    element.tokens
-      .flatMap(child => parsePlainText(child as PhrasingToken))
-      .join('')
-  );
+function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
+  switch (element.depth) {
+    // H1 (#) -> HeaderBlock 사용
+    case 1: {
+      // HeaderBlock은 plain_text만 지원하므로, 기존처럼 parsePlainText를 사용해 서식을 제거합니다.
+      const h1Text = element.tokens
+        .flatMap(child => parsePlainText(child as PhrasingToken))
+        .join('');
+      return [header(h1Text)];
+    }
+
+    // H2 (##) -> Divider + 굵은 텍스트 SectionBlock 사용
+    case 2: {
+      // SectionBlock은 mrkdwn을 지원하므로, parseMrkdwn을 사용해 ** 등 서식을 보존합니다.
+      const h2Text = element.tokens
+        .filter((child): child is Exclude<PhrasingToken, marked.Tokens.Image> => child.type !== 'image')
+        .map(parseMrkdwn)
+        .join('');
+      // 주요 섹션을 시각적으로 나누기 위해 Divider를 추가합니다.
+      return [divider(), section(`*${h2Text}*`)];
+    }
+    
+    // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
+    case 3: {
+      const h3Text = element.tokens
+        .filter((child): child is Exclude<PhrasingToken, marked.Tokens.Image> => child.type !== 'image')
+        .map(parseMrkdwn)
+        .join('');
+      return [section(`› *${h3Text}*`)];
+    }
+
+    // H4 (####) 이하 -> 단순 들여쓰기 텍스트로 처리
+    default: {
+      const otherHeadingText = element.tokens
+        .filter((child): child is Exclude<PhrasingToken, marked.Tokens.Image> => child.type !== 'image')
+        .map(parseMrkdwn)
+        .join('');
+      return [section(`› ${otherHeadingText}`)];
+    }
+  }
 }
 
 function parseCode(element: marked.Tokens.Code): SectionBlock {
@@ -320,7 +354,7 @@ function parseToken(
 ): KnownBlock[] {
   switch (token.type) {
     case 'heading':
-      return [parseHeading(token)];
+      return  parseHeading(token);
 
     case 'paragraph':
       return parseParagraph(token);
