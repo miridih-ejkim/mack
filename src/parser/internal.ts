@@ -164,7 +164,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .filter((child): child is Exclude<PhrasingToken, marked.Tokens.Image> => child.type !== 'image')
         .map(parseMrkdwn)
         .join('');
-      return [section(`› *${h3Text}*`)];
+      return [section(`› ${h3Text}`)];
     }
 
     // H4 (####) 이하 -> 단순 들여쓰기 텍스트로 처리
