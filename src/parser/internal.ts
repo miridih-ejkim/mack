@@ -148,33 +148,98 @@ function parseCode(element: marked.Tokens.Code): SectionBlock {
   return section(`\`\`\`\n${element.text}\n\`\`\``);
 }
 
+/**
+ * 마크다운 리스트 토큰을 파싱하여 Slack의 SectionBlock으로 변환합니다.
+ * 중첩 리스트, 코드 블록, 인용문 등 복잡한 콘텐츠를 재귀적으로 처리하도록 개선되었습니다.
+ * @param element The marked.Tokens.List object.
+ * @param options List-specific options from the parsing options.
+ * @param depth The current nesting depth, used for correct indentation.
+ * @returns A SectionBlock containing the fully formatted list.
+ */
 function parseList(
   element: marked.Tokens.List,
-  options: ListOptions = {}
+  options: ListOptions = {},
+  depth = 0,
 ): SectionBlock {
-  let index = 0;
-  const contents = element.items.map(item => {
-    const paragraph = item.tokens[0] as marked.Tokens.Text;
-    if (!paragraph || paragraph.type !== 'text' || !paragraph.tokens?.length) {
-      return paragraph?.text || '';
+  let listIndex = 0; // 순서 있는 리스트의 인덱스
+
+  const contents = element.items.map((item: marked.Tokens.ListItem) => {
+    // 각 리스트 아이템의 모든 토큰을 순회하며 텍스트 콘텐츠를 조합합니다.
+    let itemContent = '';
+
+    for (const token of item.tokens) {
+      let blockContent = '';
+      switch (token.type) {
+        // 'text' 토큰은 사실상 'paragraph'와 같습니다.
+        // 인라인 요소(bold, link 등)를 포함하고 있으므로 parseMrkdwn으로 처리합니다.
+        case 'paragraph': {
+          blockContent = token.tokens
+            .filter(
+              (child): child is Exclude<PhrasingToken, marked.Tokens.Image> =>
+                child.type !== 'image',
+            )
+            .map(parseMrkdwn)
+            .join('');
+          break;
+        }
+
+        case 'text': {
+          blockContent = token.raw;
+          break;
+        }
+        
+        // 중첩된 리스트 발견 시, 재귀적으로 parseList를 호출합니다.
+        case 'list': {
+          const nestedListBlock = parseList(token, options, depth + 1);
+          // 재귀 호출 결과(SectionBlock)에서 텍스트만 추출하여 추가합니다.
+          blockContent = nestedListBlock.text?.text || '';
+          break;
+        }
+        
+        // 기존 코드 블록 파서를 호출하고 결과 텍스트를 가져옵니다.
+        case 'code': {
+          const codeBlock = parseCode(token);
+          blockContent = codeBlock.text?.text || '';
+          break;
+        }
+
+        // 기존 인용문 파서를 호출하고 결과 텍스트를 조합합니다.
+        case 'blockquote': {
+          const bqBlocks = parseBlockquote(token);
+          blockContent = bqBlocks
+            .map(b => (b as SectionBlock).text?.text || '')
+            .join('\n');
+          break;
+        }
+
+        // 리스트 아이템 사이의 공백은 줄바꿈으로 처리합니다.
+        case 'space': {
+          blockContent = '\n';
+          break;
+        }
+      }
+      
+      // 파싱된 블록 콘텐츠를 현재 아이템의 전체 내용에 추가합니다.
+      // 맨 앞에 불필요한 줄바꿈이 생기지 않도록 처리합니다.
+      if (itemContent && blockContent) {
+        itemContent += `\n${blockContent}`;
+      } else {
+        itemContent += blockContent;
+      }
     }
 
-    const text = paragraph.tokens
-      .filter(
-        (child): child is Exclude<PhrasingToken, marked.Tokens.Image> =>
-          child.type !== 'image'
-      )
-      .flatMap(parseMrkdwn)
-      .join('');
+    // 최종적으로 조합된 콘텐츠에 리스트 서식(bullet, number)을 적용합니다.
+    const indent = '  '.repeat(depth);
+    const prefix = indent + (element.ordered
+      ? `${++listIndex}. `
+      : (item.checked !== null && item.checked !== undefined
+        ? `${options.checkboxPrefix?.(item.checked) ?? '• '}`
+        : '• '));
 
-    if (element.ordered) {
-      index += 1;
-      return `${index}. ${text}`;
-    } else if (item.checked !== null && item.checked !== undefined) {
-      return `${options.checkboxPrefix?.(item.checked) ?? '• '}${text}`;
-    } else {
-      return `• ${text}`;
-    }
+    // 내용의 각 줄에 들여쓰기가 적용되도록 합니다. (중첩 리스트의 경우 중요)
+    const formattedContent = itemContent.split('\n').join(`\n${prefix.replace(/./g, ' ')}`);
+
+    return `${prefix}${formattedContent}`;
   });
 
   return section(contents.join('\n'));
