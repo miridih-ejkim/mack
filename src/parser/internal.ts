@@ -155,7 +155,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .map(parseMrkdwn)
         .join('');
       // 주요 섹션을 시각적으로 나누기 위해 Divider를 추가합니다.
-      return [divider(), section(`*${h2Text}*`)];
+      return [divider(), section(`${h2Text}`)];
     }
     
     // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
@@ -207,12 +207,14 @@ function parseList(
         // 'text' 토큰은 사실상 'paragraph'와 같습니다.
         // 인라인 요소(bold, link 등)를 포함하고 있으므로 parseMrkdwn으로 처리합니다.
         case 'paragraph': {
-          const paragraphBlocks = parseParagraph(token);
-          // 반환된 블록들에서 텍스트 콘텐츠만 추출하여 합칩니다.
-          const blockContent = paragraphBlocks
-            .map(b => (b as SectionBlock).text?.text || '')
+          const blockContent = token.tokens
+            .filter(
+              (child): child is Exclude<PhrasingToken, marked.Tokens.Image> =>
+                child.type !== 'image',
+            )
+            .map(parseMrkdwn) // 여기서 `parseMrkdwn`이 각 인라인 토큰에 직접 적용됨
             .join('');
-
+          
           if (blockContent) itemBlocks.push(blockContent);
           break;
         }
