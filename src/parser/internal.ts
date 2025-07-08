@@ -152,31 +152,32 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .join('');
 
       if (hasNonAlphabetOrKorean(h1Text)) {
-        return [header('🔎' + h1Text)];
-      } else {
         return [header(h1Text)];
+      } else {
+        return [header('🔎' + h1Text)];
       }
     }
 
     // H2 (##) -> Divider + 굵은 텍스트 SectionBlock 사용
     case 2: {
-      // 헤더 텍스트를 굵게 만들기 위해 직접 처리
       const h2Text = element.tokens
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
-      
-      // 전체 텍스트를 굵게 만들고 구조적 특성을 강조
+
       return [divider(), header(`${h2Text}`)];
     }
     
     // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
     case 3: {
       // 헤더 텍스트를 굵게 만들기 위해 직접 처리
-      const h3Text = element.tokens
+      let h3Text = element.tokens
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
 
-      // 들여쓰기와 굵은 텍스트 적용
+      if (h3Text.includes('**')) {
+        h3Text = h3Text.replace('**', '');
+      }
+
       return [section(`› *${h3Text}*`)];
     }
 
