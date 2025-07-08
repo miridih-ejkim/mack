@@ -136,6 +136,12 @@ function parseParagraph(element: marked.Tokens.Paragraph): KnownBlock[] {
   }, [] as (SectionBlock | ImageBlock)[]);
 }
 
+function hasNonAlphabetOrKorean(text: string): boolean {
+  // 한글, 영문, 숫자, 공백, 기본 구두점을 제외한 모든 문자 체크
+  const nonStandardRegex = /[^\u0020-\u007E\uAC00-\uD7AF\u3130-\u318F]/;
+  return nonStandardRegex.test(text);
+}
+
 function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
   switch (element.depth) {
     // H1 (#) -> HeaderBlock 사용
@@ -144,7 +150,12 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
       const h1Text = element.tokens
         .flatMap(child => parsePlainText(child as PhrasingToken))
         .join('');
-      return [header(h1Text)];
+
+      if (hasNonAlphabetOrKorean(h1Text)) {
+        return [header('🔎' + h1Text)];
+      } else {
+        return [header(h1Text)];
+      }
     }
 
     // H2 (##) -> Divider + 굵은 텍스트 SectionBlock 사용
