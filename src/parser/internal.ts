@@ -155,7 +155,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .join('');
       
       // 전체 텍스트를 굵게 만들고 구조적 특성을 강조
-      return [divider(), section(`*${h2Text}*`)];
+      return [divider(), header(`${h2Text}`)];
     }
     
     // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
@@ -213,13 +213,28 @@ function parseList(
             .map(b => (b as SectionBlock).text?.text || '')
             .join('');
           
-          
           if (blockContent) itemBlocks.push(blockContent);
           break;
         }
 
         case 'text': {
-          if(token.text) itemBlocks.push(token.text);
+          // text 토큰이 중첩된 토큰을 가지고 있는지 확인
+          const textToken = token as marked.Tokens.Text;
+          if (textToken.tokens && Array.isArray(textToken.tokens) && textToken.tokens.length > 0) {
+            // 중첩된 토큰이 있는 경우, 이를 파싱하여 처리합니다.
+            const textBlocks: string[] = [];
+            for (const childToken of textToken.tokens) {
+              if (childToken.type !== 'image') {
+                textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
+              }
+            }
+            if (textBlocks.length > 0) {
+              itemBlocks.push(textBlocks.join(''));
+            }
+          } else if (token.text) {
+            // 단순 텍스트인 경우
+            itemBlocks.push(token.text);
+          }
           break;
         }
         
