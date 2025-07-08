@@ -175,7 +175,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .join('');
 
       if (h3Text.includes('**')) {
-        h3Text = h3Text.replace('**', '');
+        h3Text = h3Text.replace(/\*\*/g, ''); // 모든 ** 제거     
       }
 
       return [section(`› *${h3Text}*`)];
