@@ -174,9 +174,8 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
 
-      if (h3Text.includes('**')) {
-        h3Text = h3Text.replace(/\*\*/g, ''); // 모든 ** 제거     
-      }
+      // **와 *를 모두 제거 (parseMrkdwn에서 **가 *로 변환될 수 있음)
+      h3Text = h3Text.replace(/\*+/g, '');
 
       return [section(`› *${h3Text}*`)];
     }
@@ -186,9 +185,10 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
       let otherHeadingText = element.tokens
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
-      if (otherHeadingText.includes('**')) {
-        otherHeadingText = otherHeadingText.replace(/\*\*/g, ''); // 모든 ** 제거     
-      }
+      
+      // **와 *를 모두 제거 (parseMrkdwn에서 **가 *로 변환될 수 있음)
+      otherHeadingText = otherHeadingText.replace(/\*+/g, '');
+      
       return [section(`› *${otherHeadingText}*`)];
     }
   }
