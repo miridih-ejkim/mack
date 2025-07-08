@@ -40,7 +40,7 @@ function parsePlainText(element: PhrasingToken): string[] {
     case 'codespan':
     case 'text':
     case 'html':
-      return [element.raw];
+      return [element.raw.replace(/\*\*/g, '*')];
   }
 }
 
@@ -154,7 +154,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
       if (hasNonAlphabetOrKorean(h1Text)) {
         return [header(h1Text)];
       } else {
-        return [header('🔎' + h1Text)];
+        return [header('🔎 ' + h1Text)];
       }
     }
 
@@ -183,9 +183,12 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
 
     // H4 (####) 이하 -> 단순 들여쓰기 텍스트로 처리
     default: {
-      const otherHeadingText = element.tokens
+      let otherHeadingText = element.tokens
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
+      if (otherHeadingText.includes('**')) {
+        otherHeadingText = otherHeadingText.replace(/\*\*/g, ''); // 모든 ** 제거     
+      }
       return [section(`› *${otherHeadingText}*`)];
     }
   }
