@@ -40,7 +40,44 @@ function parsePlainText(element: PhrasingToken): string[] {
     case 'codespan':
     case 'text':
     case 'html':
-      return [element.raw.replace(/\*\*/g, '*')];
+      return [element.raw];
+  }
+}
+
+// HeaderBlock 전용: 모든 마크다운 서식을 제거하여 plain text 생성
+function parseHeaderPlainText(element: PhrasingToken): string[] {
+  switch (element.type) {
+    case 'link': {
+      // HeaderBlock에서는 "텍스트 (URL)" 형식으로 처리
+      const linkText = element.tokens
+        .flatMap(child => parseHeaderPlainText(child as PhrasingToken))
+        .join('');
+      return [`${linkText} (${element.href})`];
+    }
+
+    case 'em':
+    case 'strong':
+    case 'del':
+      return element.tokens.flatMap(child =>
+        parseHeaderPlainText(child as PhrasingToken)
+      );
+
+    case 'br':
+      return [];
+
+    case 'image':
+      return [element.title ?? element.href];
+
+    case 'codespan':
+    case 'text':
+    case 'html':
+      // HeaderBlock용: 모든 마크다운 서식 제거
+      return [element.raw
+        .replace(/\*+/g, '')     // *굵게*, **굵게** 제거
+        .replace(/_+/g, '')      // _기울임_ 제거
+        .replace(/~+/g, '')      // ~취소선~ 제거
+        .replace(/`+/g, '')      // `코드` 제거
+      ];
   }
 }
 
@@ -55,7 +92,7 @@ function parseMrkdwn(
     case 'link': {
       return `<${element.href}|${element.tokens
         .flatMap(child => parseMrkdwn(child as typeof element))
-        .join('')}> `;
+        .join('')}>`;
     }
 
     case 'em': {
@@ -146,9 +183,9 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
   switch (element.depth) {
     // H1 (#) -> HeaderBlock 사용
     case 1: {
-      // HeaderBlock은 plain_text만 지원하므로, 기존처럼 parsePlainText를 사용해 서식을 제거합니다.
+      // HeaderBlock은 plain_text만 지원하므로, parseHeaderPlainText를 사용해 서식을 제거합니다.
       const h1Text = element.tokens
-        .flatMap(child => parsePlainText(child as PhrasingToken))
+        .flatMap(child => parseHeaderPlainText(child as PhrasingToken))
         .join('');
 
       if (hasNonAlphabetOrKorean(h1Text)) {
@@ -160,8 +197,9 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
 
     // H2 (##) -> Divider + 굵은 텍스트 SectionBlock 사용
     case 2: {
+      // HeaderBlock은 plain_text만 지원하므로 parseHeaderPlainText 사용
       const h2Text = element.tokens
-        .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
+        .flatMap(child => parseHeaderPlainText(child as PhrasingToken))
         .join('');
 
       return [divider(), header(`${h2Text}`)];
@@ -174,8 +212,8 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
 
-      // **와 *를 모두 제거 (parseMrkdwn에서 **가 *로 변환될 수 있음)
-      h3Text = h3Text.replace(/\*+/g, '');
+      // 링크 포맷을 보호하면서 다른 *만 제거
+      h3Text = h3Text.replace(/\*+(?![^<]*>)/g, '');
 
       return [section(`› *${h3Text}*`)];
     }
@@ -186,8 +224,8 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
       
-      // **와 *를 모두 제거 (parseMrkdwn에서 **가 *로 변환될 수 있음)
-      otherHeadingText = otherHeadingText.replace(/\*+/g, '');
+      // 링크 포맷을 보호하면서 다른 *만 제거
+      otherHeadingText = otherHeadingText.replace(/\*+(?![^<]*>)/g, '');
       
       return [section(`› *${otherHeadingText}*`)];
     }
