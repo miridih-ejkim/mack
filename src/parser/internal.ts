@@ -149,20 +149,24 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
 
     // H2 (##) -> Divider + 굵은 텍스트 SectionBlock 사용
     case 2: {
-      const paragraphToken: marked.Tokens.Paragraph = { type: 'paragraph', raw: element.raw, text: element.text, tokens: element.tokens };
-      const paragraphBlocks = parseParagraph(paragraphToken);
-      const h2Text = paragraphBlocks.map(b => (b as SectionBlock).text?.text || '').join('\n');
+      // 헤더 텍스트를 굵게 만들기 위해 직접 처리
+      const h2Text = element.tokens
+        .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
+        .join('');
       
-      return [divider(), section(h2Text)];
+      // 전체 텍스트를 굵게 만들고 구조적 특성을 강조
+      return [divider(), section(`*${h2Text}*`)];
     }
     
     // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
     case 3: {
-      const paragraphToken: marked.Tokens.Paragraph = { type: 'paragraph', raw: element.raw, text: element.text, tokens: element.tokens };
-      const paragraphBlocks = parseParagraph(paragraphToken);
-      const h3Text = paragraphBlocks.map(b => (b as SectionBlock).text?.text || '').join('\n');
+      // 헤더 텍스트를 굵게 만들기 위해 직접 처리
+      const h3Text = element.tokens
+        .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
+        .join('');
 
-      return [section(`› ${h3Text}`)];
+      // 들여쓰기와 굵은 텍스트 적용
+      return [section(`› *${h3Text}*`)];
     }
 
     // H4 (####) 이하 -> 단순 들여쓰기 텍스트로 처리
@@ -170,7 +174,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
       const otherHeadingText = element.tokens
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
-      return [section(`› ${otherHeadingText}`)];
+      return [section(`› *${otherHeadingText}*`)];
     }
   }
 }
