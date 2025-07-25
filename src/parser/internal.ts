@@ -74,9 +74,9 @@ function parseMrkdwn(
     }
 
     case 'em': {
-      return `*${element.tokens
+      return `_${element.tokens
         .flatMap(child => parseMrkdwn(child as typeof element))
-        .join('')}*`;
+        .join('')}_`;
     }
 
     case 'codespan':
@@ -177,14 +177,14 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
       }
     }
 
-    // H2 (##) -> HeaderBlock으로 변환
+    // H2 (##) -> Divider + HeaderBlock 사용
     case 2: {
       // H2 텍스트를 mrkdwn으로 파싱하여 서식을 보존합니다.
       const h2Text = element.tokens
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
 
-      return [header(`${h2Text}`)];
+      return [divider(), header(`${h2Text}`)];
     }
     
     // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
@@ -369,8 +369,8 @@ function parseBlockquote(element: marked.Tokens.Blockquote): KnownBlock[] {
     );
 }
 
-function parseThematicBreak(): DividerBlock {
-  return divider();
+function parseThematicBreak(): KnownBlock[] {
+  return [];
 }
 
 function parseHTML(
@@ -415,7 +415,7 @@ function parseToken(
       return [parseTable(token)];
 
     case 'hr':
-      return [parseThematicBreak()];
+      return parseThematicBreak();
 
     case 'html':
       return parseHTML(token);
