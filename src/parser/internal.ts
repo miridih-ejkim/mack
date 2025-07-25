@@ -21,28 +21,6 @@ type PhrasingToken =
   | marked.Tokens.Text
   | marked.Tokens.HTML;
 
-function parsePlainText(element: PhrasingToken): string[] {
-  switch (element.type) {
-    case 'link':
-    case 'em':
-    case 'strong':
-    case 'del':
-      return element.tokens.flatMap(child =>
-        parsePlainText(child as PhrasingToken)
-      );
-
-    case 'br':
-      return [];
-
-    case 'image':
-      return [element.title ?? element.href];
-
-    case 'codespan':
-    case 'text':
-    case 'html':
-      return [element.raw];
-  }
-}
 
 // HeaderBlock 전용: 모든 마크다운 서식을 제거하여 plain text 생성
 function parseHeaderPlainText(element: PhrasingToken): string[] {
@@ -96,9 +74,9 @@ function parseMrkdwn(
     }
 
     case 'em': {
-      return `_${element.tokens
+      return `*${element.tokens
         .flatMap(child => parseMrkdwn(child as typeof element))
-        .join('')}_`;
+        .join('')}*`;
     }
 
     case 'codespan':
@@ -111,7 +89,11 @@ function parseMrkdwn(
     }
 
     case 'text':
-      return element.text;
+    case 'html':
+      return element.raw
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 
     case 'del': {
       return `~${element.tokens
@@ -195,14 +177,14 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
       }
     }
 
-    // H2 (##) -> Divider + 굵은 텍스트 SectionBlock 사용
+    // H2 (##) -> HeaderBlock으로 변환
     case 2: {
-      // HeaderBlock은 plain_text만 지원하므로 parseHeaderPlainText 사용
+      // H2 텍스트를 mrkdwn으로 파싱하여 서식을 보존합니다.
       const h2Text = element.tokens
-        .flatMap(child => parseHeaderPlainText(child as PhrasingToken))
+        .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
 
-      return [divider(), header(`${h2Text}`)];
+      return [header(`${h2Text}`)];
     }
     
     // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
@@ -213,7 +195,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .join('');
 
       // 링크 포맷을 보호하면서 다른 *만 제거
-      h3Text = h3Text.replace(/\*+(?![^<]*>)/g, '');
+      h3Text = h3Text.replace(/(?<!<[^>]*)\*(.*?)\*(?![^<]*>)/g, '$1');
 
       return [section(`› *${h3Text}*`)];
     }
@@ -225,7 +207,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
         .join('');
       
       // 링크 포맷을 보호하면서 다른 *만 제거
-      otherHeadingText = otherHeadingText.replace(/\*+(?![^<]*>)/g, '');
+      otherHeadingText = otherHeadingText.replace(/(?<!<[^>]*)\*(.*?)\*(?![^<]*>)/g, '$1');
       
       return [section(`› *${otherHeadingText}*`)];
     }
@@ -271,22 +253,17 @@ function parseList(
         }
 
         case 'text': {
-          // text 토큰이 중첩된 토큰을 가지고 있는지 확인
           const textToken = token as marked.Tokens.Text;
-          if (textToken.tokens && Array.isArray(textToken.tokens) && textToken.tokens.length > 0) {
-            // 중첩된 토큰이 있는 경우, 이를 파싱하여 처리합니다.
-            const textBlocks: string[] = [];
-            for (const childToken of textToken.tokens) {
-              if (childToken.type !== 'image') {
-                textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
-              }
+          const textBlocks: string[] = [];
+          const textTokens = textToken.tokens ?? [textToken];
+
+          for (const childToken of textTokens) {
+            if (childToken.type !== 'image') {
+              textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
             }
-            if (textBlocks.length > 0) {
-              itemBlocks.push(textBlocks.join(''));
-            }
-          } else if (token.text) {
-            // 단순 텍스트인 경우
-            itemBlocks.push(token.text);
+          }
+          if (textBlocks.length > 0) {
+            itemBlocks.push(textBlocks.join(''));
           }
           break;
         }
