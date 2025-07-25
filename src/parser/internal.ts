@@ -240,39 +240,6 @@ function parseCode(element: marked.Tokens.Code): SectionBlock {
 }
 
 /**
- * '출처' 섹션의 링크 리스트를 파싱합니다.
- * 글머리 기호 없이 각 항목을 줄바꿈으로 연결하여 하나의 섹션으로 만듭니다.
- * @param element The marked.Tokens.List object.
- * @returns A SectionBlock containing the formatted source list.
- */
-function parseSourceList(element: marked.Tokens.List): SectionBlock {
-  const contents = element.items.map((item: marked.Tokens.ListItem) => {
-    // 리스트 아이템 내부의 토큰(paragraph 또는 text)을 순회합니다.
-    return item.tokens
-      .map(token => {
-        // paragraph 또는 text 토큰을 모두 처리합니다.
-        if (token.type === 'paragraph' || token.type === 'text') {
-          // 두 토큰 타입 모두 `tokens`라는 속성에 인라인 요소들을 포함할 수 있습니다.
-          const inlineTokens = (token as marked.Tokens.Paragraph | marked.Tokens.Text)
-            .tokens;
-
-          if (inlineTokens) {
-            return inlineTokens
-              .map(t =>
-                parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>)
-              )
-              .join('');
-          }
-        }
-        // 그 외 다른 타입의 토큰(중첩 리스트, 코드 블록 등)은 무시합니다.
-        return '';
-      })
-      .join('');
-  });
-  return section(contents.join('\n'));
-}
-
-/**
  * 마크다운 리스트 토큰을 파싱하여 Slack의 SectionBlock으로 변환합니다.
  * 중첩 리스트, 코드 블록, 인용문 등 복잡한 콘텐츠를 재귀적으로 처리하도록 개선되었습니다.
  * @param element The marked.Tokens.List object.
@@ -504,14 +471,15 @@ export function parseBlocks(
       }
       const nextToken = tokens[nextTokenIndex];
 
-      // 2. 만약 뒤에 리스트가 있다면, 리스트를 특별 처리하고 다음 토큰으로 넘어갑니다.
+      // 만약 리스트가 뒤따라온다면, 기존 parseList를 사용해 처리
       if (nextToken?.type === 'list') {
-        resultBlocks.push(parseSourceList(nextToken));
-        i = nextTokenIndex + 1; // '출처'와 리스트를 모두 건너뜁니다.
+        resultBlocks.push(parseList(nextToken, options.lists));
+        // 처리된 토큰(출처, 공백, 리스트)을 모두 건너뛰기
+        i = nextTokenIndex + 1;
         continue;
       }
 
-      // 3. 리스트가 없다면, '출처' 토큰만 처리한 셈이므로 다음 토큰으로 넘어갑니다.
+      // `**출처:**` 토큰만 처리했으므로 다음 토큰으로 이동
       i++;
       continue;
     }
