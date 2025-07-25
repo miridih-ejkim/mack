@@ -148,6 +148,11 @@ function parsePhrasingContent(
 }
 
 function parseParagraph(element: marked.Tokens.Paragraph): KnownBlock[] {
+  // `**출처:**` 텍스트를 특별히 처리하여 divider와 함께 굵게 표시
+  if (element.raw.trim() === '**출처:**') {
+    return [divider(), section('*출처:*')];
+  }
+
   // Paragraphs in Slack are just simple text, so we'll convert all phrasing
   // content to a single string and remove any problematic markdown like bold/italics.
   const text = element.tokens
@@ -232,6 +237,33 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
 
 function parseCode(element: marked.Tokens.Code): SectionBlock {
   return section(`\`\`\`\n${element.text}\n\`\`\``);
+}
+
+/**
+ * '출처' 섹션의 링크 리스트를 파싱합니다.
+ * 글머리 기호 없이 각 항목을 줄바꿈으로 연결하여 하나의 섹션으로 만듭니다.
+ * @param element The marked.Tokens.List object.
+ * @returns A SectionBlock containing the formatted source list.
+ */
+function parseSourceList(element: marked.Tokens.List): SectionBlock {
+  const contents = element.items.map((item: marked.Tokens.ListItem) => {
+    // 각 리스트 아이템은 보통 하나의 paragraph 토큰으로 구성됩니다.
+    return item.tokens
+      .map(token => {
+        if (token.type === 'paragraph') {
+          // paragraph 내부의 인라인 토큰(링크 등)을 파싱합니다.
+          return token.tokens
+            .map(t =>
+              parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>)
+            )
+            .join('');
+        }
+        // 다른 타입의 토큰은 일단 무시합니다.
+        return '';
+      })
+      .join('');
+  });
+  return section(contents.join('\n'));
 }
 
 /**
@@ -445,5 +477,43 @@ export function parseBlocks(
   tokens: marked.TokensList,
   options: ParsingOptions = {}
 ): KnownBlock[] {
-  return tokens.flatMap(token => parseToken(token, options));
+  const resultBlocks: KnownBlock[] = [];
+  let i = 0;
+
+  while (i < tokens.length) {
+    const token = tokens[i];
+
+    // `**출처:**` 패턴을 일관되게 처리하는 단일 규칙
+    if (
+      token.type === 'paragraph' &&
+      token.raw.trim() === '**출처:**'
+    ) {
+      // 1. `**출처:**`를 발견하면 무조건 H2 스타일(divider + header)을 적용합니다.
+      resultBlocks.push(divider(), header('출처'));
+
+      // 다음 토큰이 리스트인지 확인 (공백 토큰 건너뛰기)
+      let nextTokenIndex = i + 1;
+      if (tokens[nextTokenIndex]?.type === 'space') {
+        nextTokenIndex++;
+      }
+      const nextToken = tokens[nextTokenIndex];
+
+      // 2. 만약 뒤에 리스트가 있다면, 리스트를 특별 처리하고 다음 토큰으로 넘어갑니다.
+      if (nextToken?.type === 'list') {
+        resultBlocks.push(parseSourceList(nextToken));
+        i = nextTokenIndex + 1; // '출처'와 리스트를 모두 건너뜁니다.
+        continue;
+      }
+
+      // 3. 리스트가 없다면, '출처' 토큰만 처리한 셈이므로 다음 토큰으로 넘어갑니다.
+      i++;
+      continue;
+    }
+
+    // 4. `**출처:**`가 아닌 다른 모든 토큰은 기존 방식으로 처리합니다.
+    resultBlocks.push(...parseToken(token, options));
+    i++;
+  }
+
+  return resultBlocks;
 }
