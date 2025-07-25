@@ -148,10 +148,27 @@ function parsePhrasingContent(
 }
 
 function parseParagraph(element: marked.Tokens.Paragraph): KnownBlock[] {
-  return element.tokens.reduce((accumulator, child) => {
-    parsePhrasingContent(child as PhrasingToken, accumulator);
-    return accumulator;
-  }, [] as (SectionBlock | ImageBlock)[]);
+  // Paragraphs in Slack are just simple text, so we'll convert all phrasing
+  // content to a single string and remove any problematic markdown like bold/italics.
+  const text = element.tokens
+    .map(token => {
+      // For links, we preserve them. For everything else, we take the raw text
+      // and strip any lingering markdown formatting characters.
+      if (token.type === 'link') {
+        return `<${token.href}|${token.text}>`;
+      }
+      return token.raw;
+    })
+    .join('')
+    .replace(/[*_~]+/g, ''); // Remove bold, italic, strikethrough markers
+
+  if (!text) {
+    return [];
+  }
+
+  // Since we are creating a new section block from scratch, we can use the
+  // simple section constructor.
+  return [section(text)];
 }
 
 function hasNonAlphabetOrKorean(text: string): boolean {
