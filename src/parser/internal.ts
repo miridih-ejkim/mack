@@ -259,46 +259,44 @@ function parseList(
     const itemBlocks: string[] = [];
 
     for (const token of item.tokens) {
-      let blockContent = '';
       switch (token.type) {
         // 'text' 토큰은 사실상 'paragraph'와 같습니다.
         // 인라인 요소(bold, link 등)를 포함하고 있으므로 parseMrkdwn으로 처리합니다.
-        case 'paragraph': {
-          const textBlocks: string[] = [];
-          for (const childToken of token.tokens) {
-            if (childToken.type !== 'image') {
-              textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
-            }
-          }
-          const blockContent = textBlocks.join('');
-          if (blockContent) itemBlocks.push(blockContent);
-          break;
-        }
-
+        case 'paragraph':
         case 'text': {
-          const textToken = token as marked.Tokens.Text;
-          const textBlocks: string[] = [];
-          const textTokens = textToken.tokens ?? [textToken];
+          const containerToken = token as
+            | marked.Tokens.Paragraph
+            | marked.Tokens.Text;
+          // paragraph 토큰은 항상 sub-token을 가집니다. text 토큰은 sub-token을 가지거나
+          // 혹은 일반 텍스트 노드일 수 있습니다. sub-token이 없으면 토큰 자체를 처리합니다.
+          const subTokens = containerToken.tokens ?? [containerToken];
 
-          for (const childToken of textTokens) {
+          const textBlocks: string[] = [];
+          for (const childToken of subTokens) {
             if (childToken.type !== 'image') {
-              textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
+              textBlocks.push(
+                parseMrkdwn(
+                  childToken as Exclude<PhrasingToken, marked.Tokens.Image>
+                )
+              );
             }
           }
-          if (textBlocks.length > 0) {
-            itemBlocks.push(textBlocks.join(''));
+          const content = textBlocks.join('');
+          if (content) {
+            itemBlocks.push(content);
           }
           break;
         }
-        
+
         // 중첩된 리스트 발견 시, 재귀적으로 parseList를 호출합니다.
         case 'list': {
           const nestedListBlock = parseList(token, options, depth + 1);
           // 재귀 호출 결과(SectionBlock)에서 텍스트만 추출하여 추가합니다.
-          if (nestedListBlock.text?.text) itemBlocks.push(nestedListBlock.text.text);
+          if (nestedListBlock.text?.text)
+            itemBlocks.push(nestedListBlock.text.text);
           break;
         }
-        
+
         // 기존 코드 블록 파서를 호출하고 결과 텍스트를 가져옵니다.
         case 'code': {
           const codeBlock = parseCode(token);
@@ -309,7 +307,7 @@ function parseList(
         // 기존 인용문 파서를 호출하고 결과 텍스트를 조합합니다.
         case 'blockquote': {
           const bqBlocks = parseBlockquote(token);
-          blockContent = bqBlocks
+          const blockContent = bqBlocks
             .map(b => (b as SectionBlock).text?.text || '')
             .join('\n');
           if (blockContent) itemBlocks.push(blockContent);
@@ -322,7 +320,7 @@ function parseList(
         }
       }
     }
-    
+
     // 최종적으로 조합된 콘텐츠에 리스트 서식(bullet, number)을 적용합니다.
     const indent = '  '.repeat(depth);
     const prefix = indent + (element.ordered ? `${++listIndex}. `: '• ');
@@ -377,7 +375,6 @@ function parseTable(element: marked.Tokens.Table): SectionBlock {
 
   return section(`\`\`\`\n${parsedRows.join('\n')}\n\`\`\``);
 }
-
 function parseBlockquote(element: marked.Tokens.Blockquote): KnownBlock[] {
   return element.tokens
     .filter(
@@ -493,3 +490,4 @@ export function parseBlocks(
 
   return resultBlocks;
 }
+
