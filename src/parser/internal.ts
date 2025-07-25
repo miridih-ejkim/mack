@@ -10,6 +10,11 @@ import {section, divider, header, image} from '../slack';
 import {marked} from 'marked';
 import {XMLParser} from 'fast-xml-parser';
 
+marked.setOptions({
+  mangle: false,
+  headerIds: false,
+});
+
 type PhrasingToken =
   | marked.Tokens.Link
   | marked.Tokens.Em
@@ -74,18 +79,14 @@ function parseMrkdwn(
     }
 
     case 'em': {
-      return `_${element.tokens
-        .flatMap(child => parseMrkdwn(child as typeof element))
-        .join('')}_`;
+      return `_${element.text}_`;
     }
 
     case 'codespan':
       return `\`${element.text}\``;
 
     case 'strong': {
-      return `*${element.tokens
-        .flatMap(child => parseMrkdwn(child as typeof element))
-        .join('')}*`;
+      return `*${element.text}*`;
     }
 
     case 'text':
@@ -96,9 +97,7 @@ function parseMrkdwn(
         .replace(/>/g, '&gt;');
 
     case 'del': {
-      return `~${element.tokens
-        .flatMap(child => parseMrkdwn(child as typeof element))
-        .join('')}~`;
+      return `~${element.text}~`;
     }
 
     default:
