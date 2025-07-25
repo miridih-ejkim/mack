@@ -247,18 +247,24 @@ function parseCode(element: marked.Tokens.Code): SectionBlock {
  */
 function parseSourceList(element: marked.Tokens.List): SectionBlock {
   const contents = element.items.map((item: marked.Tokens.ListItem) => {
-    // 각 리스트 아이템은 보통 하나의 paragraph 토큰으로 구성됩니다.
+    // 리스트 아이템 내부의 토큰(paragraph 또는 text)을 순회합니다.
     return item.tokens
       .map(token => {
-        if (token.type === 'paragraph') {
-          // paragraph 내부의 인라인 토큰(링크 등)을 파싱합니다.
-          return token.tokens
-            .map(t =>
-              parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>)
-            )
-            .join('');
+        // paragraph 또는 text 토큰을 모두 처리합니다.
+        if (token.type === 'paragraph' || token.type === 'text') {
+          // 두 토큰 타입 모두 `tokens`라는 속성에 인라인 요소들을 포함할 수 있습니다.
+          const inlineTokens = (token as marked.Tokens.Paragraph | marked.Tokens.Text)
+            .tokens;
+
+          if (inlineTokens) {
+            return inlineTokens
+              .map(t =>
+                parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>)
+              )
+              .join('');
+          }
         }
-        // 다른 타입의 토큰은 일단 무시합니다.
+        // 그 외 다른 타입의 토큰(중첩 리스트, 코드 블록 등)은 무시합니다.
         return '';
       })
       .join('');
