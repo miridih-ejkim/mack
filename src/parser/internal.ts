@@ -90,6 +90,8 @@ function parseMrkdwn(
     }
 
     case 'text':
+      return element.raw.replace(/[*_~]+/g, '');
+
     case 'html':
       return element.raw
         .replace(/&/g, '&amp;')
@@ -259,41 +261,43 @@ function parseList(
     const itemBlocks: string[] = [];
 
     for (const token of item.tokens) {
+      let blockContent = '';
       switch (token.type) {
         // 'text' 토큰은 사실상 'paragraph'와 같습니다.
         // 인라인 요소(bold, link 등)를 포함하고 있으므로 parseMrkdwn으로 처리합니다.
-        case 'paragraph':
-        case 'text': {
-          const containerToken = token as
-            | marked.Tokens.Paragraph
-            | marked.Tokens.Text;
-          // paragraph 토큰은 항상 sub-token을 가집니다. text 토큰은 sub-token을 가지거나
-          // 혹은 일반 텍스트 노드일 수 있습니다. sub-token이 없으면 토큰 자체를 처리합니다.
-          const subTokens = containerToken.tokens ?? [containerToken];
-
+        case 'paragraph': {
           const textBlocks: string[] = [];
-          for (const childToken of subTokens) {
+          for (const childToken of token.tokens) {
             if (childToken.type !== 'image') {
-              textBlocks.push(
-                parseMrkdwn(
-                  childToken as Exclude<PhrasingToken, marked.Tokens.Image>
-                )
-              );
+              textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
             }
           }
-          const content = textBlocks.join('');
-          if (content) {
-            itemBlocks.push(content);
-          }
+          const blockContent = textBlocks.join(''); 
+          if (blockContent) itemBlocks.push(blockContent);
           break;
         }
 
+        case 'text': {
+          const textToken = token as marked.Tokens.Text;
+          const textBlocks: string[] = [];
+          const textTokens = textToken.tokens ?? [textToken];
+
+          for (const childToken of textTokens) {
+            if (childToken.type !== 'image') {
+              textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
+            }
+          }
+          if (textBlocks.length > 0) {
+            itemBlocks.push(textBlocks.join(''));
+          }
+          break;
+        }
+        
         // 중첩된 리스트 발견 시, 재귀적으로 parseList를 호출합니다.
         case 'list': {
           const nestedListBlock = parseList(token, options, depth + 1);
           // 재귀 호출 결과(SectionBlock)에서 텍스트만 추출하여 추가합니다.
-          if (nestedListBlock.text?.text)
-            itemBlocks.push(nestedListBlock.text.text);
+          if (nestedListBlock.text?.text) itemBlocks.push(nestedListBlock.text.text);
           break;
         }
 
@@ -307,7 +311,7 @@ function parseList(
         // 기존 인용문 파서를 호출하고 결과 텍스트를 조합합니다.
         case 'blockquote': {
           const bqBlocks = parseBlockquote(token);
-          const blockContent = bqBlocks
+          blockContent = bqBlocks
             .map(b => (b as SectionBlock).text?.text || '')
             .join('\n');
           if (blockContent) itemBlocks.push(blockContent);
