@@ -73,9 +73,17 @@ function parseMrkdwn(
 ): string {
   switch (element.type) {
     case 'link': {
-      return `<${element.href}|${element.tokens
-        .flatMap(child => parseMrkdwn(child as typeof element))
-        .join('')}>`;
+      // 더 안전한 링크 처리: tokens 배열이 존재하면 재귀적으로 처리, 없으면 text 사용
+      if (element.tokens && element.tokens.length > 0) {
+        const linkText = element.tokens
+          .filter(token => token.type !== 'image')  // 이미지 토큰 제외
+          .map(token => parseMrkdwn(token as Exclude<PhrasingToken, marked.Tokens.Image>))
+          .join('');
+        return `<${element.href}|${linkText || element.text || element.href}>`;
+      } else {
+        // tokens가 없거나 비어있는 경우 fallback
+        return `<${element.href}|${element.text || element.href}>`;
+      }
     }
 
     case 'em': {
