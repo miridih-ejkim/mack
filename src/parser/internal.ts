@@ -228,8 +228,8 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
   }
 }
 
-// Slack 메시지 크기 제한 (35,000자로 안전 마진 적용)
-const SLACK_MAX_SAFE_TEXT_LENGTH = 35000;
+// Slack 메시지 크기 제한 (3000자 제한에 맞춤)
+const SLACK_MAX_SAFE_TEXT_LENGTH = 3000;
 
 function parseCode(element: marked.Tokens.Code): SectionBlock[] {
   const fullCode = `\`\`\`\n${element.text}\n\`\`\``;
