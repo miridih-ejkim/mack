@@ -26,7 +26,6 @@ type PhrasingToken =
   | marked.Tokens.Text
   | marked.Tokens.HTML;
 
-
 // HeaderBlock 전용: 모든 마크다운 서식을 제거하여 plain text 생성
 function parseHeaderPlainText(element: PhrasingToken): string[] {
   switch (element.type) {
@@ -52,14 +51,17 @@ function parseHeaderPlainText(element: PhrasingToken): string[] {
       return [element.title ?? element.href];
 
     case 'codespan':
+      // 코드 스팬에서는 백틱만 제거하고 내용은 보존
+      return [element.text];
     case 'text':
     case 'html':
-      // HeaderBlock용: 모든 마크다운 서식 제거
-      return [element.raw
-        .replace(/\*+/g, '')     // *굵게*, **굵게** 제거
-        .replace(/_+/g, '')      // _기울임_ 제거
-        .replace(/~+/g, '')      // ~취소선~ 제거
-        .replace(/`+/g, '')      // `코드` 제거
+      // HeaderBlock용: 마크다운 서식만 제거, 실제 언더스코어는 보존
+      return [
+        element.raw
+          .replace(/\*+/g, '') // *굵게*, **굵게** 제거
+          .replace(/(?<!\w)_+(?=\w)|(?<=\w)_+(?!\w)/g, '') // 마크다운 _기울임_ 제거 (단어 경계)
+          .replace(/~+/g, '') // ~취소선~ 제거
+          .replace(/`+/g, ''), // `코드` 제거
       ];
   }
 }
@@ -76,8 +78,10 @@ function parseMrkdwn(
       // 더 안전한 링크 처리: tokens 배열이 존재하면 재귀적으로 처리, 없으면 text 사용
       if (element.tokens && element.tokens.length > 0) {
         const linkText = element.tokens
-          .filter(token => token.type !== 'image')  // 이미지 토큰 제외
-          .map(token => parseMrkdwn(token as Exclude<PhrasingToken, marked.Tokens.Image>))
+          .filter(token => token.type !== 'image') // 이미지 토큰 제외
+          .map(token =>
+            parseMrkdwn(token as Exclude<PhrasingToken, marked.Tokens.Image>)
+          )
           .join('');
         return `<${element.href}|${linkText || element.text || element.href}>`;
       } else {
@@ -98,7 +102,11 @@ function parseMrkdwn(
     }
 
     case 'text':
-      return element.raw.replace(/[*_~]+/g, '');
+      // 마크다운 서식만 제거, 실제 언더스코어는 보존
+      return element.raw
+        .replace(/\*+/g, '') // 별표 제거
+        .replace(/(?<![\w_])_(?=\w)|(?<=\w)_(?![\w_])/g, '') // 마크다운 기울임만 제거
+        .replace(/~+/g, ''); // 물결 제거
 
     case 'html':
       return element.raw
@@ -115,19 +123,6 @@ function parseMrkdwn(
   }
 }
 
-function addMrkdwn(
-  content: string,
-  accumulator: (SectionBlock | ImageBlock)[]
-) {
-  const last = accumulator[accumulator.length - 1];
-
-  if (last && isSectionBlock(last) && last.text) {
-    last.text.text += content;
-  } else {
-    accumulator.push(section(content));
-  }
-}
-
 function parsePhrasingContentToStrings(
   element: PhrasingToken,
   accumulator: string[]
@@ -137,23 +132,6 @@ function parsePhrasingContentToStrings(
   } else {
     const text = parseMrkdwn(element);
     accumulator.push(text);
-  }
-}
-
-function parsePhrasingContent(
-  element: PhrasingToken,
-  accumulator: (SectionBlock | ImageBlock)[]
-) {
-  if (element.type === 'image') {
-    const imageBlock: ImageBlock = image(
-      element.href,
-      element.text || element.title || element.href,
-      element.title
-    );
-    accumulator.push(imageBlock);
-  } else {
-    const text = parseMrkdwn(element);
-    addMrkdwn(text, accumulator);
   }
 }
 
@@ -175,7 +153,9 @@ function parseParagraph(element: marked.Tokens.Paragraph): KnownBlock[] {
       return token.raw;
     })
     .join('')
-    .replace(/[*_~]+/g, ''); // Remove bold, italic, strikethrough markers
+    .replace(/\*+/g, '') // 별표 제거
+    .replace(/(?<![\w_])_(?=\w)|(?<=\w)_(?![\w_])/g, '') // 마크다운 기울임만 제거
+    .replace(/~+/g, ''); // 물결 제거
 
   if (!text) {
     return [];
@@ -217,7 +197,7 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
 
       return [divider(), header(`${h2Text}`)];
     }
-    
+
     // H3 (###) -> 인용(>) 스타일을 사용해 들여쓰기된 굵은 텍스트 SectionBlock
     case 3: {
       // 헤더 텍스트를 굵게 만들기 위해 직접 처리
@@ -236,17 +216,70 @@ function parseHeading(element: marked.Tokens.Heading): KnownBlock[] {
       let otherHeadingText = element.tokens
         .map(t => parseMrkdwn(t as Exclude<PhrasingToken, marked.Tokens.Image>))
         .join('');
-      
+
       // 링크 포맷을 보호하면서 다른 *만 제거
-      otherHeadingText = otherHeadingText.replace(/(?<!<[^>]*)\*(.*?)\*(?![^<]*>)/g, '$1');
-      
+      otherHeadingText = otherHeadingText.replace(
+        /(?<!<[^>]*)\*(.*?)\*(?![^<]*>)/g,
+        '$1'
+      );
+
       return [section(`› *${otherHeadingText}*`)];
     }
   }
 }
 
-function parseCode(element: marked.Tokens.Code): SectionBlock {
-  return section(`\`\`\`\n${element.text}\n\`\`\``);
+// Slack 메시지 크기 제한 (35,000자로 안전 마진 적용)
+const SLACK_MAX_SAFE_TEXT_LENGTH = 35000;
+
+function parseCode(element: marked.Tokens.Code): SectionBlock[] {
+  const fullCode = `\`\`\`\n${element.text}\n\`\`\``;
+  
+  // 코드가 크기 제한을 초과하지 않으면 단일 블록으로 반환
+  if (fullCode.length <= SLACK_MAX_SAFE_TEXT_LENGTH) {
+    return [section(fullCode)];
+  }
+  
+  // 긴 코드를 여러 블록으로 분할
+  const codePrefix = '```\n';
+  const codeSuffix = '\n```';
+  const codeContent = element.text;
+  
+  const blocks: SectionBlock[] = [];
+  const overheadLength = 200; // 분할 표시 텍스트를 위한 여유 공간
+  const maxCodeLength = SLACK_MAX_SAFE_TEXT_LENGTH - codePrefix.length - codeSuffix.length - overheadLength;
+  
+  let start = 0;
+  let chunkIndex = 1;
+  const totalChunks = Math.ceil(codeContent.length / maxCodeLength);
+  
+  while (start < codeContent.length) {
+    const chunkSize = Math.min(maxCodeLength, codeContent.length - start);
+    const chunk = codeContent.substring(start, start + chunkSize);
+    
+    const isFirst = start === 0;
+    const isLast = start + chunkSize >= codeContent.length;
+    
+    let chunkText: string;
+    if (isFirst && isLast) {
+      // 단일 청크 (이론적으로 불가능하지만 안전장치)
+      chunkText = `${codePrefix}${chunk}${codeSuffix}`;
+    } else if (isFirst) {
+      // 첫 번째 청크
+      chunkText = `${codePrefix}${chunk}${codeSuffix}\n\n*⚠️ 코드가 너무 길어서 ${totalChunks}개 청크로 분할되었습니다. (${chunkIndex}/${totalChunks})*`;
+    } else if (isLast) {
+      // 마지막 청크
+      chunkText = `*⚠️ 분할된 코드 계속 (${chunkIndex}/${totalChunks})*\n\n${codePrefix}${chunk}${codeSuffix}`;
+    } else {
+      // 중간 청크
+      chunkText = `*⚠️ 분할된 코드 계속 (${chunkIndex}/${totalChunks})*\n\n${codePrefix}${chunk}${codeSuffix}`;
+    }
+    
+    blocks.push(section(chunkText));
+    start += chunkSize;
+    chunkIndex++;
+  }
+  
+  return blocks;
 }
 
 /**
@@ -260,7 +293,7 @@ function parseCode(element: marked.Tokens.Code): SectionBlock {
 function parseList(
   element: marked.Tokens.List,
   options: ListOptions = {},
-  depth = 0,
+  depth = 0
 ): SectionBlock {
   let listIndex = 0; // 순서 있는 리스트의 인덱스
 
@@ -277,10 +310,14 @@ function parseList(
           const textBlocks: string[] = [];
           for (const childToken of token.tokens) {
             if (childToken.type !== 'image') {
-              textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
+              textBlocks.push(
+                parseMrkdwn(
+                  childToken as Exclude<PhrasingToken, marked.Tokens.Image>
+                )
+              );
             }
           }
-          const blockContent = textBlocks.join(''); 
+          const blockContent = textBlocks.join('');
           if (blockContent) itemBlocks.push(blockContent);
           break;
         }
@@ -292,7 +329,11 @@ function parseList(
 
           for (const childToken of textTokens) {
             if (childToken.type !== 'image') {
-              textBlocks.push(parseMrkdwn(childToken as Exclude<PhrasingToken, marked.Tokens.Image>));
+              textBlocks.push(
+                parseMrkdwn(
+                  childToken as Exclude<PhrasingToken, marked.Tokens.Image>
+                )
+              );
             }
           }
           if (textBlocks.length > 0) {
@@ -300,19 +341,23 @@ function parseList(
           }
           break;
         }
-        
+
         // 중첩된 리스트 발견 시, 재귀적으로 parseList를 호출합니다.
         case 'list': {
           const nestedListBlock = parseList(token, options, depth + 1);
           // 재귀 호출 결과(SectionBlock)에서 텍스트만 추출하여 추가합니다.
-          if (nestedListBlock.text?.text) itemBlocks.push(nestedListBlock.text.text);
+          if (nestedListBlock.text?.text)
+            itemBlocks.push(nestedListBlock.text.text);
           break;
         }
 
         // 기존 코드 블록 파서를 호출하고 결과 텍스트를 가져옵니다.
         case 'code': {
-          const codeBlock = parseCode(token);
-          if (codeBlock.text?.text) itemBlocks.push(codeBlock.text.text);
+          const codeBlocks = parseCode(token);
+          const codeTexts = codeBlocks
+            .map(block => block.text?.text || '')
+            .filter(text => text);
+          if (codeTexts.length > 0) itemBlocks.push(codeTexts.join('\n'));
           break;
         }
 
@@ -335,14 +380,16 @@ function parseList(
 
     // 최종적으로 조합된 콘텐츠에 리스트 서식(bullet, number)을 적용합니다.
     const indent = '  '.repeat(depth);
-    const prefix = indent + (element.ordered ? `${++listIndex}. `: '• ');
+    const prefix = indent + (element.ordered ? `${++listIndex}. ` : '• ');
     const itemContent = itemBlocks.join('\n');
 
     // 내용의 각 줄에 들여쓰기가 적용되도록 함
     const multiLinePrefix = prefix.replace(/./g, ' ');
-    const indentedContent = itemContent.split('\n').join(`\n${multiLinePrefix}`);
+    const indentedContent = itemContent
+      .split('\n')
+      .join(`\n${multiLinePrefix}`);
 
-    return `${prefix}${indentedContent}`;        
+    return `${prefix}${indentedContent}`;
   });
 
   return section(contents.join('\n'));
@@ -435,7 +482,7 @@ function parseToken(
       return parseParagraph(token);
 
     case 'code':
-      return [parseCode(token)];
+      return parseCode(token);
 
     case 'blockquote':
       return parseBlockquote(token);
@@ -468,10 +515,7 @@ export function parseBlocks(
     const token = tokens[i];
 
     // `**출처:**` 패턴을 일관되게 처리하는 단일 규칙
-    if (
-      token.type === 'paragraph' &&
-      token.raw.trim() === '**출처:**'
-    ) {
+    if (token.type === 'paragraph' && token.raw.trim() === '**출처:**') {
       // 1. `**출처:**`를 발견하면 무조건 H2 스타일(divider + header)을 적용합니다.
       resultBlocks.push(divider(), header('출처'));
 
@@ -502,4 +546,3 @@ export function parseBlocks(
 
   return resultBlocks;
 }
-
